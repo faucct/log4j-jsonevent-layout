@@ -15,24 +15,10 @@ import java.util.Map;
 import java.util.TimeZone;
 
 public class JSONEventLayoutV1 extends Layout {
-
     private boolean locationInfo = false;
     private String customUserFields;
 
-    private boolean ignoreThrowable = false;
-
-    private boolean activeIgnoreThrowable = ignoreThrowable;
-    private String hostname = new HostData().getHostName();
-    private String threadName;
-    private long timestamp;
-    private String ndc;
-    private Map mdc;
-    private LocationInfo info;
-    private HashMap<String, Object> exceptionInformation;
-    private static Integer version = 1;
-
-
-    private JSONObject logstashEvent;
+    private final String hostname = new HostData().getHostName();
 
     public static final TimeZone UTC = TimeZone.getTimeZone("UTC");
     public static final FastDateFormat ISO_DATETIME_TIME_ZONE_FORMAT_WITH_MILLIS = FastDateFormat.getInstance("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", UTC);
@@ -60,13 +46,13 @@ public class JSONEventLayoutV1 extends Layout {
     }
 
     public String format(LoggingEvent loggingEvent) {
-        threadName = loggingEvent.getThreadName();
-        timestamp = loggingEvent.getTimeStamp();
-        exceptionInformation = new HashMap<String, Object>();
-        mdc = loggingEvent.getProperties();
-        ndc = loggingEvent.getNDC();
+        String threadName = loggingEvent.getThreadName();
+        long timestamp = loggingEvent.getTimeStamp();
+        HashMap<String, Object> exceptionInformation = new HashMap<String, Object>();
+        Map mdc = loggingEvent.getProperties();
+        String ndc = loggingEvent.getNDC();
 
-        logstashEvent = new JSONObject();
+        JSONObject logstashEvent = new JSONObject();
         String whoami = this.getClass().getSimpleName();
 
         /**
@@ -74,6 +60,7 @@ public class JSONEventLayoutV1 extends Layout {
          * "@timestamp" and "@version"
          * Every other field is arbitrary
          */
+        Integer version = 1;
         logstashEvent.put("@version", version);
         logstashEvent.put("@timestamp", dateFormat(timestamp));
 
@@ -83,7 +70,7 @@ public class JSONEventLayoutV1 extends Layout {
         if (getUserFields() != null) {
             String userFlds = getUserFields();
             LogLog.debug("["+whoami+"] Got user data from log4j property: "+ userFlds);
-            addUserFields(userFlds);
+            addUserFields(logstashEvent, userFlds);
         }
 
         /**
@@ -96,7 +83,7 @@ public class JSONEventLayoutV1 extends Layout {
             }
             String userFieldsProperty = System.getProperty(ADDITIONAL_DATA_PROPERTY);
             LogLog.debug("["+whoami+"] Got user data from system property: " + userFieldsProperty);
-            addUserFields(userFieldsProperty);
+            addUserFields(logstashEvent, userFieldsProperty);
         }
 
         /**
@@ -117,28 +104,28 @@ public class JSONEventLayoutV1 extends Layout {
                 String stackTrace = StringUtils.join(throwableInformation.getThrowableStrRep(), "\n");
                 exceptionInformation.put("stacktrace", stackTrace);
             }
-            addEventData("exception", exceptionInformation);
+            addEventData(logstashEvent, "exception", exceptionInformation);
         }
 
         if (locationInfo) {
-            info = loggingEvent.getLocationInformation();
-            addEventData("file", info.getFileName());
-            addEventData("line_number", info.getLineNumber());
-            addEventData("class", info.getClassName());
-            addEventData("method", info.getMethodName());
+            LocationInfo info = loggingEvent.getLocationInformation();
+            addEventData(logstashEvent, "file", info.getFileName());
+            addEventData(logstashEvent, "line_number", info.getLineNumber());
+            addEventData(logstashEvent, "class", info.getClassName());
+            addEventData(logstashEvent, "method", info.getMethodName());
         }
 
-        addEventData("logger_name", loggingEvent.getLoggerName());
-        addEventData("mdc", mdc);
-        addEventData("ndc", ndc);
-        addEventData("level", loggingEvent.getLevel().toString());
-        addEventData("thread_name", threadName);
+        addEventData(logstashEvent, "logger_name", loggingEvent.getLoggerName());
+        addEventData(logstashEvent, "mdc", mdc);
+        addEventData(logstashEvent, "ndc", ndc);
+        addEventData(logstashEvent, "level", loggingEvent.getLevel().toString());
+        addEventData(logstashEvent, "thread_name", threadName);
 
         return logstashEvent.toString() + "\n";
     }
 
     public boolean ignoresThrowable() {
-        return ignoreThrowable;
+        return false;
     }
 
     /**
@@ -163,10 +150,9 @@ public class JSONEventLayoutV1 extends Layout {
     public void setUserFields(String userFields) { this.customUserFields = userFields; }
 
     public void activateOptions() {
-        activeIgnoreThrowable = ignoreThrowable;
     }
 
-    private void addUserFields(String data) {
+    private void addUserFields(JSONObject logstashEvent, String data) {
         if (null != data) {
             String[] pairs = data.split(",");
             for (String pair : pairs) {
@@ -174,12 +160,12 @@ public class JSONEventLayoutV1 extends Layout {
                 if (userField[0] != null) {
                     String key = userField[0];
                     String val = userField[1];
-                    addEventData(key, val);
+                    addEventData(logstashEvent, key, val);
                 }
             }
         }
     }
-    private void addEventData(String keyname, Object keyval) {
+    private static void addEventData(JSONObject logstashEvent, String keyname, Object keyval) {
         if (null != keyval) {
             logstashEvent.put(keyname, keyval);
         }
